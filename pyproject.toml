@@ -31,5 +31,8 @@ dev = [
     "ruff",
 ]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff.lint]
 extend-select = ["I"] # Enables the isort rules in Ruff
