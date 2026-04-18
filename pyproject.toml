@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kagea-agent"
+version = "0.1.0"
+authors = [{ name = "Loo Jun Zing", email = "jzloo11111@gmail.com" }] # Change later
+requires-python = ">=3.12"
+dependencies = [
+    # Telegram API
+    "python-telegram-bot",
+
+    # Main Agent and tools
+    "dspy",
+    "pageindex",
+
+    # Knowledge Base Ingestion
+    "requests",
+    "urllib3",
+
+    # Utils
+    "pytest",
+    "PyYAML",
+
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+    "ruff",
+]
+
+[tool.ruff.lint]
+extend-select = ["I"] # Enables the isort rules in Ruff

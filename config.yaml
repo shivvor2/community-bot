@@ -1,0 +1,19 @@
+## Organize Config.yaml
+bot_settings:
+  qna:
+    source_name: "latest"
+    max_iter: 25
+
+
+
+# LiteLLM compatible modelstring
+indexing:
+  pageindex_model: "openrouter/minimax/minimax-m2.7"
+  index_dir: "indexed"
+
+ingestion:
+  sitemap_index: "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+  user_agent: "Mozilla/5.0 (compatible; GitBookDownloader/1.0)"
+  concurrency: 4
+  delay: 0.3
+  output_dir: "sources"
