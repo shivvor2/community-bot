@@ -8,7 +8,7 @@ bot_settings:
     source_name: "latest"
     max_iter: 25
   spam:
-    mode: "warn" # Placeholder arg
+    mode: "delete" # Currently not used as punishment hardcoded
 
 # To be passed into the bot,
 # Prevents moderation agent from banning users for discussing bot owner's projects
