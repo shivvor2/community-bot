@@ -1,14 +1,24 @@
 ## Organize Config.yaml
 bot_settings:
+  api_base: "https://openrouter.ai/api/v1"
+  api_key_varname: "OPENROUTER_API_KEY"
+  model: "google/gemma-4-31b-it"
+  max_hist_msg: 50
   qna:
     source_name: "latest"
     max_iter: 25
+  spam:
+    mode: "warn" # Placeholder arg
 
-
+# To be passed into the bot,
+# Prevents moderation agent from banning users for discussing bot owner's projects
+org_info:
+  name: 'Hyperliquid'
+  context: "Hyperliquid is a Layer 1 blockchain for DeFi trading"
 
 # LiteLLM compatible modelstring
 indexing:
-  pageindex_model: "openrouter/qwen/qwen-2.5-7b-instruct"
+  pageindex_model: "openrouter/google/gemma-4-31b-it"
   index_dir: "indexed"
   vault_dir: ""  # Path to local docs directory (e.g., /path/to/hyperliquid-docs-trimmed)
 

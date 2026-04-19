@@ -9,7 +9,7 @@ authors = [{ name = "Loo Jun Zing", email = "jzloo11111@gmail.com" }] # Change l
 requires-python = ">=3.12"
 dependencies = [
     # Telegram API
-    "python-telegram-bot",
+    "python-telegram-bot[ext]",
 
     # Main Agent and tools
     "dspy",
