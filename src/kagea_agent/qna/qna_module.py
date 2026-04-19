@@ -2,10 +2,10 @@ import json
 from pathlib import Path
 
 import dspy
+import yaml
 
 # Internal imports
-import indexing
-import yaml
+from kagea_agent.qna.indexing import use_artifacts as indexing
 
 # Assume ran from TLD, correct if wrong
 with open("config.yaml", "r") as file:
@@ -23,7 +23,7 @@ with open(artifact_path, "r") as file:
 
 
 # ---------------------------------------------------------------------------
-# DSPy Tools (plain functions for now, closure version of use_artifacts.py
+# DSPy Tools (plain functions for now, closure version of use_artifacts.py)
 # ---------------------------------------------------------------------------
 
 # Including original docstring as it is used by DSPy
@@ -74,7 +74,7 @@ def get_full_document(source_path: str) -> str:
     return indexing.get_full_document(artifact, source_path)
 
 
-def get_vault_context(artifact: dict) -> str:
+def get_vault_context() -> str:
     """
     Returns vault summary and all folder summaries.
     Useful for the agent's system prompt or initial context.
@@ -97,7 +97,7 @@ instructions = """
 # TODO: Change chat history typing according to Telegram API modelling
 class DocQA(dspy.Signature):
     """
-    DSPy signiture of the kagea qna agent
+    DSPy signature of the kagea qna agent
     """
 
     question: str = dspy.InputField()
@@ -124,4 +124,4 @@ qna_agent_tools = [
 
 max_iters = int(config.get("bot_settings", {}).get("qna", {}).get("max_iter", 25))
 
-qna_agent = dspy.ReAct(signiture=DocQA, tools=qna_agent_tools, max_iters=max_iters)
+qna_agent = dspy.ReAct(signature=DocQA, tools=qna_agent_tools, max_iters=max_iters)

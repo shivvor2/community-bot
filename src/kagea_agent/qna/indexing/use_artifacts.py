@@ -115,10 +115,19 @@ def get_document_structure(artifact: dict, source_path: str) -> str:
     if not doc:
         return json.dumps({"error": f"Document '{source_path}' not found"})
 
-    structure = doc.get("pageindex_structure_no_text")
+    structure = doc.get("pageindex_structure")
     if structure is None:
-        # Fallback: strip text from the full structure on the fly
-        structure = doc.get("pageindex_structure", []).pop
+        return json.dumps({"error": f"No structure found for '{source_path}'"})
+
+    # Strip text fields for the structure view
+    def _strip_text(nodes: list | dict) -> list | dict:
+        if isinstance(nodes, dict):
+            return {k: _strip_text(v) for k, v in nodes.items() if k != "text"}
+        elif isinstance(nodes, list):
+            return [_strip_text(item) for item in nodes]
+        return nodes
+
+    structure = _strip_text(structure)
 
     return json.dumps(
         {

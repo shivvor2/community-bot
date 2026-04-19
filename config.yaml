@@ -8,8 +8,9 @@ bot_settings:
 
 # LiteLLM compatible modelstring
 indexing:
-  pageindex_model: "openrouter/minimax/minimax-m2.7"
+  pageindex_model: "openrouter/qwen/qwen-2.5-7b-instruct"
   index_dir: "indexed"
+  vault_dir: ""  # Path to local docs directory (e.g., /path/to/hyperliquid-docs-trimmed)
 
 ingestion:
   sitemap_index: "{http://www.sitemaps.org/schemas/sitemap/0.9}"

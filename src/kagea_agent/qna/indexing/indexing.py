@@ -1,17 +1,20 @@
 """
 indexing.py
 
-Production indexer for a markdown documentation vault using PageIndex.
+Production indexer for a markdown documentation vault.
 Produces a single hierarchical JSON artifact with:
   - vault-level summary
   - folder-level summaries
-  - per-document PageIndex trees + full markdown text
+  - per-document heading tree + full markdown text
+
+The tree structure mimics PageIndex's output format so downstream
+tools (use_artifacts.py, qna_module.py) work unchanged.
 
 Usage:
     artifact = asyncio.run(index_vault(
         vault_dir=Path("./docs"),
-        workspace=Path("./workspace"),
-        model="gpt-4o-2024-11-20",
+        model="openrouter/minimax/minimax-m2.7",
+        output_path=Path("./indexed/latest.json"),
     ))
 """
 
@@ -21,14 +24,113 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from pageindex import PageIndexClient
-from pageindex.utils import llm_acompletion, remove_fields, structure_to_list
+import litellm
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Markdown heading tree generation
+# ---------------------------------------------------------------------------
+
+
+def _parse_heading(line: str) -> tuple[int, str] | None:
+    """Parse a markdown heading line. Returns (level, title) or None."""
+    m = re.match(r"^(#{1,6})\s+(.+)$", line)
+    if m:
+        return len(m.group(1)), m.group(2).strip()
+    return None
+
+
+def _build_heading_tree(markdown: str) -> list[dict[str, Any]]:
+    """
+    Build a hierarchical tree from markdown headings.
+
+    Each node:
+        {
+            "node_id": "uuid-like string",
+            "title": "Heading text",
+            "level": 1-6,
+            "line_num": int (1-indexed),
+            "text": "Content under this heading until next same/higher level",
+            "nodes": [child nodes]
+        }
+    """
+    lines = markdown.split("\n")
+    root_nodes: list[dict[str, Any]] = []
+    # Stack of (level, node) — tracks current nesting path
+    stack: list[tuple[int, dict[str, Any]]] = []
+
+    # Collect content between headings
+    current_content: list[str] = []
+    current_line_start: int = 1
+
+    def _flush_content(node: dict | None):
+        """Attach accumulated content to a node."""
+        if node is not None:
+            node["text"] = "\n".join(current_content).strip()
+
+    node_counter = 0
+
+    for i, line in enumerate(lines):
+        heading = _parse_heading(line)
+
+        if heading:
+            level, title = heading
+            line_num = i + 1  # 1-indexed
+
+            # Flush content into previous node
+            if stack:
+                _flush_content(stack[-1][1])
+
+            # Create new node
+            node_counter += 1
+            node: dict[str, Any] = {
+                "node_id": f"node_{node_counter}",
+                "title": title,
+                "level": level,
+                "line_num": line_num,
+                "text": "",
+                "nodes": [],
+            }
+
+            # Find parent (first node on stack with lower level)
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+
+            if stack:
+                stack[-1][1]["nodes"].append(node)
+            else:
+                root_nodes.append(node)
+
+            stack.append((level, node))
+            current_content = []
+            current_line_start = line_num + 1
+        else:
+            current_content.append(line)
+
+    # Flush remaining content into last node
+    if stack:
+        _flush_content(stack[-1][1])
+
+    return root_nodes
+
+
+def _strip_tree_text(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove 'text' fields from tree for structure-only view."""
+    result = []
+    for node in nodes:
+        stripped = {k: v for k, v in node.items() if k != "text"}
+        if "nodes" in stripped:
+            stripped["nodes"] = _strip_tree_text(stripped["nodes"])
+        result.append(stripped)
+    return result
+
 
 # ---------------------------------------------------------------------------
 # Path metadata
@@ -48,7 +150,6 @@ def _path_metadata(md_path: Path, root: Path) -> dict[str, Any]:
     }
 
 
-# TODO: (Planned) implement staleness checking (possibly based on hash check)
 def _file_sha256(path: Path) -> str:
     h = hashlib.sha256()
     h.update(path.read_bytes())
@@ -56,12 +157,14 @@ def _file_sha256(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Summary generation
+# Summary generation (via litellm)
 # ---------------------------------------------------------------------------
 
 
-async def _generate_summary(text: str, model: str, kind: str = "folder") -> str:
-    """Ask the LLM for a one-sentence summary. Uses litellm via pageindex's utils."""
+async def _generate_summary(
+    text: str, model: str, kind: str = "folder"
+) -> str:
+    """Ask the LLM for a one-sentence summary. Uses litellm."""
 
     if kind == "vault":
         prompt = (
@@ -80,7 +183,24 @@ async def _generate_summary(text: str, model: str, kind: str = "folder") -> str:
     else:
         raise ValueError(f"Unknown summary kind: {kind}")
 
-    return await llm_acompletion(model=model, prompt=prompt)
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        logger.warning("No OPENROUTER_API_KEY — returning placeholder summary")
+        return f"[Summary unavailable — no API key]"
+
+    try:
+        response = await litellm.acompletion(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            api_key=api_key,
+            temperature=0,
+            max_tokens=200,
+        )
+        content = response.choices[0].message.content
+        return content.strip() if content else "[No content returned]"
+    except Exception as e:
+        logger.warning(f"Summary generation failed: {e}")
+        return f"[Summary generation failed: {e}]"
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +210,8 @@ async def _generate_summary(text: str, model: str, kind: str = "folder") -> str:
 
 async def index_vault(
     vault_dir: str | Path,
-    workspace: str | Path,
-    model: str = "openrouter/mini",
+    workspace: str | Path | None = None,
+    model: str = "openrouter/qwen/qwen-2.5-7b-instruct",
     output_path: str | Path | None = None,
     max_concurrency: int = 5,
     force_reindex: bool = False,
@@ -104,16 +224,16 @@ async def index_vault(
     ----------
     vault_dir : Path
         Root directory of the markdown documentation.
-    workspace : Path
-        PageIndexClient workspace directory for persistence.
+    workspace : Path, optional
+        Legacy parameter (ignored — kept for API compatibility).
     model : str
-        LLM model for indexing and summary generation.
+        LLM model for summary generation (litellm format).
     output_path : Path, optional
         If provided, writes the final artifact JSON here.
     max_concurrency : int
-        Max concurrent PageIndex indexing calls.
+        Max concurrent LLM calls for summaries.
     force_reindex : bool
-        If True, re-indexes files even if already in workspace.
+        Kept for API compatibility (no caching in this implementation).
     generate_summaries : bool
         If True, generates folder and vault summaries via LLM.
 
@@ -123,72 +243,52 @@ async def index_vault(
         The complete vault artifact.
     """
     vault_dir = Path(vault_dir).resolve()
-    workspace = Path(workspace).resolve()
 
     if not vault_dir.is_dir():
         raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
 
-    client = PageIndexClient(workspace=str(workspace), model=model)
-
     md_files = sorted(vault_dir.rglob("*.md"))
+    # Filter out Zone.Identifier files (Windows metadata)
+    md_files = [f for f in md_files if not f.name.endswith(":Zone.Identifier")]
+
     if not md_files:
         raise FileNotFoundError(f"No .md files found under {vault_dir}")
 
     logger.info(f"Found {len(md_files)} markdown files in {vault_dir}")
 
-    # ── Build a map of already-indexed files (by absolute path) ──────────
-    existing_by_path: dict[str, str] = {}
-    for doc_id, doc in client.documents.items():
-        p = doc.get("path", "")
-        if p:
-            existing_by_path[p] = doc_id
-
     # ── Index each file ──────────────────────────────────────────────────
-    sem = asyncio.Semaphore(max_concurrency)
     documents: list[dict[str, Any]] = []
 
-    async def _index_file(md_path: Path) -> dict[str, Any]:
-        abs_path = str(md_path.resolve())
+    for md_path in md_files:
         meta = _path_metadata(md_path, vault_dir)
         sha = _file_sha256(md_path)
-
-        # Check if already indexed
-        if not force_reindex and abs_path in existing_by_path:
-            doc_id = existing_by_path[abs_path]
-            logger.info(f"[cached] {meta['source_path']} -> {doc_id}")
-        else:
-            async with sem:
-                # PageIndexClient.index is sync internally (handles its own event loop),
-                # so run in executor to avoid blocking
-                loop = asyncio.get_running_loop()
-                doc_id = await loop.run_in_executor(
-                    None, client.index, str(md_path), "md"
-                )
-            logger.info(f"[indexed] {meta['source_path']} -> {doc_id}")
-
-        # Retrieve the indexed data via client API
-        doc_meta_json = client.get_document(doc_id)
-        doc_meta = json.loads(doc_meta_json)
-
-        structure_json = client.get_document_structure(doc_id)
-        structure = json.loads(structure_json)
-
-        # Read full markdown for whole-document retrieval
         raw_markdown = md_path.read_text(encoding="utf-8")
 
-        return {
-            **meta,
-            "doc_id": doc_id,
-            "sha256": sha,
-            "doc_name": doc_meta.get("doc_name", ""),
-            "doc_description": doc_meta.get("doc_description", ""),
-            "line_count": doc_meta.get("line_count", 0),
-            "markdown": raw_markdown,
-            "pageindex_structure": structure,
-        }
+        # Build heading tree
+        tree = _build_heading_tree(raw_markdown)
 
-    tasks = [_index_file(p) for p in md_files]
-    documents = await asyncio.gather(*tasks)
+        # Extract doc name and description from first heading + first paragraph
+        doc_name = meta["stem"]
+        doc_description = ""
+        first_heading = tree[0] if tree else None
+        if first_heading:
+            doc_name = first_heading["title"]
+            # Use first ~200 chars of content under first heading as description
+            text = first_heading.get("text", "").strip()
+            if text:
+                doc_description = text[:200].split("\n")[0]
+
+        documents.append({
+            **meta,
+            "doc_id": f"doc_{sha[:12]}",
+            "sha256": sha,
+            "doc_name": doc_name,
+            "doc_description": doc_description,
+            "line_count": len(raw_markdown.splitlines()),
+            "markdown": raw_markdown,
+            "pageindex_structure": tree,
+            "pageindex_structure_no_text": _strip_tree_text(tree),
+        })
 
     # ── Build folder hierarchy ───────────────────────────────────────────
     folders_map: dict[str, dict[str, Any]] = {}
@@ -225,6 +325,12 @@ async def index_vault(
 
     # ── Generate folder summaries ────────────────────────────────────────
     if generate_summaries:
+        sem = asyncio.Semaphore(max_concurrency)
+
+        async def _safe_summary(context: str, kind: str) -> str:
+            async with sem:
+                return await _generate_summary(context, model, kind)
+
         folder_summary_tasks = []
         folder_keys_for_tasks = []
 
@@ -250,7 +356,7 @@ async def index_vault(
             if lines:
                 context = "\n".join(lines)
                 folder_summary_tasks.append(
-                    _generate_summary(context, model, kind="folder")
+                    _safe_summary(context, kind="folder")
                 )
                 folder_keys_for_tasks.append(fp)
 
@@ -266,8 +372,8 @@ async def index_vault(
             if info["summary"]
         )
         if vault_summary_context:
-            vault_summary = await _generate_summary(
-                vault_summary_context, model, kind="vault"
+            vault_summary = await _safe_summary(
+                vault_summary_context, kind="vault"
             )
         else:
             vault_summary = ""
@@ -293,6 +399,3 @@ async def index_vault(
         logger.info(f"Artifact written to {output_path}")
 
     return artifact
-
-
-# If no (optional) name arg, index to "index/latest", otherwise, index to "index/name"
