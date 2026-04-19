@@ -3,6 +3,7 @@ from pathlib import Path
 
 import dspy
 import yaml
+from typing import Optional
 
 # Internal imports
 from kagea_agent.qna.indexing import use_artifacts as indexing
@@ -89,18 +90,21 @@ def get_vault_context() -> str:
 
 # TODO: Write a Proper prompt, read from an external file (not in the code)
 instructions = """
-    You are Kagea agent, an AI agent designed for Document QnA in
+    You are Kagea QnA agent, an AI agent designed for Document QnA in
     a groupchat setting.
 """
 
 
-# TODO: Change chat history typing according to Telegram API modelling
+# TODO: Change chat history typing (if we want images from history)
 class DocQA(dspy.Signature):
     """
     DSPy signature of the kagea qna agent
     """
 
     question: str = dspy.InputField()
+    question_images: Optional[list[dspy.Image]] = dspy.InputField(
+        desc="Images relevant to the question"
+    )
     chat_history: str = dspy.InputField(desc="Recent Chat history")
     vault_context: str = dspy.InputField(
         desc="Summary of the Knowledge base and directory information"
@@ -114,6 +118,7 @@ class DocQA(dspy.Signature):
 # Looks stupid, unfortunately the only way to supply
 DocQA = DocQA.with_instructions(instructions)
 
+# Use a smaller subset of tools if amount of lines is small
 qna_agent_tools = [
     browse_vault,
     list_documents,
