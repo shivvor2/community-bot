@@ -32,6 +32,11 @@ dev = [
     "ruff",
 ]
 
+[project.scripts]
+kagea-bot = "kagea_agent.main:main"
+kagea-ingest = "kagea_agent.qna.ingestion.gitbook:main"
+kagea-index = "kagea_agent.index_source:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

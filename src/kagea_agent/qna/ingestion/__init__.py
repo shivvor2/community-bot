@@ -1,1 +1,1 @@
-from .gitbook import download_gitbook
+from .gitbook import download_gitbook, main
