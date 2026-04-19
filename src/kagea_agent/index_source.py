@@ -19,27 +19,16 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import yaml
 from dotenv import load_dotenv
 
 from kagea_agent.qna.indexing import index_vault
+from kagea_agent.config import load_config
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
 load_dotenv()  # Load .env for OPENROUTER_API_KEY etc.
-
-
-def _load_config(config_path: str = "config.yaml") -> dict:
-    path = Path(config_path)
-    if not path.exists():
-        logging.warning(f"Config file not found: {config_path}, using defaults")
-        return {}
-    with open(path, "r") as f:
-        return yaml.safe_load(f) or {}
-
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -105,12 +94,14 @@ Examples:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    config = _load_config(args.config)
+    config = load_config(args.config)
 
     # ── Resolve parameters ───────────────────────────────────────────────
-    vault_dir = args.vault_dir or config.get("indexing", {}).get("vault_dir", "")
+    vault_dir = args.vault_dir or config.indexing.vault_dir
     if not vault_dir:
-        logging.error("No vault directory specified. Use --vault-dir or set indexing.vault_dir in config.yaml")
+        logging.error(
+            "No vault directory specified. Use --vault-dir or set indexing.vault_dir in config.yaml"
+        )
         sys.exit(1)
 
     vault_dir = Path(vault_dir).resolve()
@@ -118,10 +109,10 @@ Examples:
         logging.error(f"Vault directory not found: {vault_dir}")
         sys.exit(1)
 
-    artifact_name = args.name or config.get("bot_settings", {}).get("qna", {}).get("source_name", "latest")
-    index_dir = Path(config.get("indexing", {}).get("index_dir", "indexed"))
-    model = args.model or config.get("indexing", {}).get("pageindex_model", "openrouter/qwen/qwen-2.5-7b-instruct")
-    max_concurrency = args.concurrency or 5
+    artifact_name = args.name or config.bot_settings.qna.source_name
+    index_dir = Path(config.indexing.index_dir)
+    model = args.model or config.indexing.pageindex_model
+    max_concurrency = args.concurrency or config.ingestion.concurrency or 4
     generate_summaries = not args.no_summaries
 
     # ── Create workspace (PageIndex uses this for persistence) ────────────

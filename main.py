@@ -11,6 +11,7 @@ from telegram import Update
 import dspy
 
 from kagea_agent.config import load_config
+from kagea_agent.utils import get_org_context
 from kagea_agent.handlers import spam_scanner, handle_ask, record_message
 
 cfg = load_config()
@@ -22,7 +23,7 @@ MAX_HISTORY = 50
 bot_model = dspy.LM(
     cfg.bot_settings.model,
     api_key=os.getenv(cfg.bot_settings.api_key_varname),
-    api_base=cfg.bot_settings.api_key_varname,
+    api_base=cfg.bot_settings.api_base,
 )
 
 dspy.configure(lm=bot_model)
@@ -36,6 +37,7 @@ async def post_init(application):
 
     # Also put everything
     application.bot_data["max_hist_msg"] = cfg.bot_settings.max_hist_msg
+    application.bot_data["org_context"] = get_org_context()
 
 
 # ── Build & Run ────────────────────────────────────────────────────

@@ -2,32 +2,35 @@ import json
 from pathlib import Path
 
 import dspy
-import yaml
 from typing import Optional
 
 # Internal imports
+from kagea_agent.config import load_config
 from kagea_agent.qna.indexing import use_artifacts as indexing
 
-# Assume ran from TLD, correct if wrong
-with open("config.yaml", "r") as file:
-    # Load content into a Python object (dictionary/list)
-    config = yaml.safe_load(file)
+_cfg = load_config()
 
-# Load the artifact
-index_dir = config.get("indexing", {}).get("index_dir", "indexed")
-source_name = config.get("bot_settings", {}).get("qna", {}).get("source_name", "latest")
-artifact_path = Path(index_dir, source_name)
+# ---------------------------------------------------------------------------
+# Lazy artifact loader
+# ---------------------------------------------------------------------------
 
-# report if error
-with open(artifact_path, "r") as file:
-    artifact = json.load(file)
+_artifact = None
+
+
+def _load_artifact():
+    global _artifact
+    if _artifact is None:
+        index_dir = _cfg.indexing.index_dir
+        source_name = _cfg.bot_settings.qna.source_name
+        artifact_path = Path(index_dir) / f"{source_name}.json"
+        with open(artifact_path, "r") as f:
+            _artifact = json.load(f)
+    return _artifact
 
 
 # ---------------------------------------------------------------------------
-# DSPy Tools (plain functions for now, closure version of use_artifacts.py)
+# DSPy Tools (plain functions, closure over artifact)
 # ---------------------------------------------------------------------------
-
-# Including original docstring as it is used by DSPy
 
 
 def browse_vault(folder_path: str = ""):
@@ -35,7 +38,7 @@ def browse_vault(folder_path: str = ""):
     Browse the vault folder hierarchy.
     Returns folder summary, child folders, and file list.
     """
-    return indexing.browse_vault(artifact, folder_path)
+    return indexing.browse_vault(_load_artifact(), folder_path)
 
 
 def list_documents(folder_path: str | None = None):
@@ -43,7 +46,7 @@ def list_documents(folder_path: str | None = None):
     List documents, optionally filtered to a folder.
     Returns source_path, doc_description, and parent_folder for each.
     """
-    return indexing.list_documents(artifact, folder_path)
+    return indexing.list_documents(_load_artifact(), folder_path)
 
 
 def get_document_structure(source_path: str):
@@ -51,7 +54,7 @@ def get_document_structure(source_path: str):
     Returns the PageIndex tree structure (without text) for a document.
     The agent reasons over this to identify relevant sections/line numbers.
     """
-    return indexing.get_document_structure(artifact, source_path)
+    return indexing.get_document_structure(_load_artifact(), source_path)
 
 
 def get_section_content(source_path: str, lines: str) -> str:
@@ -64,7 +67,7 @@ def get_section_content(source_path: str, lines: str) -> str:
 
     Falls back to slicing raw markdown if structure has no text fields.
     """
-    return indexing.get_section_content(artifact, source_path, lines)
+    return indexing.get_section_content(_load_artifact(), source_path, lines)
 
 
 def get_full_document(source_path: str) -> str:
@@ -72,7 +75,7 @@ def get_full_document(source_path: str) -> str:
     Returns the complete markdown content of a document.
     Use for short documents where full context is needed.
     """
-    return indexing.get_full_document(artifact, source_path)
+    return indexing.get_full_document(_load_artifact(), source_path)
 
 
 def get_vault_context() -> str:
@@ -80,7 +83,7 @@ def get_vault_context() -> str:
     Returns vault summary and all folder summaries.
     Useful for the agent's system prompt or initial context.
     """
-    return indexing.get_vault_context(artifact)
+    return indexing.get_vault_context(_load_artifact())
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +130,6 @@ qna_agent_tools = [
     get_full_document,
 ]
 
-max_iters = int(config.get("bot_settings", {}).get("qna", {}).get("max_iter", 25))
+max_iters = _cfg.bot_settings.qna.max_iter
 
 qna_agent = dspy.ReAct(signature=DocQA, tools=qna_agent_tools, max_iters=max_iters)

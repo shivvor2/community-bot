@@ -77,6 +77,7 @@ async def spam_scanner(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message=msg.text or "",
         message_images=dspy_images,
         chat_history=history_str,
+        org_info=context.bot_data.get("org_context", ""),
         admin_list=admin_list,
     )
 
