@@ -1,4 +1,3 @@
-import time
 from telegram import ChatMember
 from telegram.constants import ChatMemberStatus
 

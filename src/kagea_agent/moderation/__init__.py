@@ -1,1 +1,1 @@
-from src.kagea_agent.moderation.moderation_module import moderation_agent
+from kagea_agent.moderation.moderation_module import moderation_agent

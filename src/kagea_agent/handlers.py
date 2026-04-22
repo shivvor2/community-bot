@@ -21,25 +21,13 @@ cfg = load_config()
 # ---------------------------------------------------------------------------
 
 
+# TODO: Handle multi image/ album case later
 async def extract_images_from_message(bot, message: "Message") -> list[bytes]:
-    """Download all photos from a message, handling albums."""
     images: list[bytes] = []
-
     if not message or not message.photo:
         return images
-
-    if message.media_group_id:
-        # Album: fetch all messages in the group
-        media_group = await bot.get_media_group(message.chat_id, message.message_id)
-        for msg in media_group:
-            if msg.photo:
-                photo_file = await bot.get_file(msg.photo[-1].file_id)
-                images.append(bytes(await photo_file.download_as_bytearray()))
-    else:
-        # Single photo
-        photo_file = await bot.get_file(message.photo[-1].file_id)
-        images.append(bytes(await photo_file.download_as_bytearray()))
-
+    photo_file = await bot.get_file(message.photo[-1].file_id)
+    images.append(bytes(await photo_file.download_as_bytearray()))
     return images
 
 
@@ -131,7 +119,10 @@ async def handle_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if result.answer_found:
-        await update.message.reply_text(result.answer, parse_mode="Markdown")
+        try:
+            await update.message.reply_text(result.answer, parse_mode="Markdown")
+        except Exception:
+            await update.message.reply_text(result.answer)
     else:
         await update.message.reply_text(
             "I couldn't find a relevant answer in the documentation."
