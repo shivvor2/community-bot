@@ -9,11 +9,13 @@ from telegram.ext import (
 )
 from telegram import Update
 import dspy
+from dotenv import load_dotenv
 
 from kagea_agent.config import load_config
 from kagea_agent.utils import get_org_context
 from kagea_agent.handlers import spam_scanner, handle_ask, record_message
 
+load_dotenv()
 cfg = load_config()
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
